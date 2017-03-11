@@ -106,7 +106,8 @@ double constrain(double lowerBoundary, double upperBoundary,double input);		//
 circle getR(float x1, float y1, float x2, float y2, float x3, float y3);		//
 //******************************************************************************//
 
-static void userDriverGetParam(float midline[200][2], float yaw, float yawrate, float speed, float acc, float width, int gearbox, float rpm){
+static void userDriverGetParam(float midline[200][2], float yaw, float yawrate, float speed, 
+	float acc, float width, int gearbox, float rpm){
 	/* write your own code here */
 	
 	for (int i = 0; i< 200; ++i) _midline[i][0] = midline[i][0], _midline[i][1] = midline[i][1];
@@ -117,6 +118,10 @@ static void userDriverGetParam(float midline[200][2], float yaw, float yawrate, 
 	_width = width;
 	_rpm = rpm;
 	_gearbox = gearbox;
+
+	//printf("yaw= %f \n", yaw);	
+	printf("yawRate= %f \n", yawrate);
+
 }
 
 static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, int* cmdGear){
@@ -131,16 +136,21 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 		You can modify the limited speed in this module
 		Enjoy  -_-  
 		*/
-		startPoint = _speed * 0.445;
-		c = getR(_midline[startPoint][0],_midline[startPoint][1],_midline[startPoint+delta][0],_midline[startPoint+delta][1],_midline[startPoint+2*delta][0],_midline[startPoint+2*delta][1]);
+
+		//  get expectedSpeed by the radius at the startPoint
+		startPoint = _speed * 0.445;  // 0.445
+		c = getR(_midline[startPoint][0],_midline[startPoint][1],
+			_midline[startPoint+delta][0],_midline[startPoint+delta][1],
+			_midline[startPoint+2*delta][0],_midline[startPoint+2*delta][1]);
 		if (c.r<=60)
 		{
-			expectedSpeed = constrain(45,200,c.r*c.r*(-0.046)+c.r*5.3-59.66);
+			expectedSpeed = constrain(45,300,c.r*c.r*(-0.046)+c.r*5.3-59.66);
 		}
 		else
 		{
-			expectedSpeed = constrain(100,200,c.r*1.4);
+			expectedSpeed = constrain(100,300,c.r*1.4);
 		}
+		// set Acc and Brake
 		curSpeedErr = expectedSpeed - _speed;
 		speedErrSum = 0.1 * speedErrSum + curSpeedErr;
 		if (curSpeedErr > 0)
@@ -149,6 +159,7 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 			if (abs(*cmdSteer)<0.6)
 			{
 				*cmdAcc = constrain(0.0,1.0,kp_s * curSpeedErr + ki_s * speedErrSum + offset);
+				// cmdAcc = constrain(0.0, 1.0, 0.02 * curSpeedErr)
 				*cmdBrake = 0;
 			}
 			else if (abs(*cmdSteer)>0.70)
@@ -169,6 +180,7 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 			*cmdAcc = 0;
 		}
 
+		// set Gear
 		updateGear(cmdGear);
 		
 		/******************************************Modified by Yuan Wei********************************************/
@@ -183,8 +195,13 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
         ki_d = 0;
 		kd_d = 0;
 
+		// Direction Control Variables						         //
+			//double D_err;//direction error					             //
+			//double D_errDiff = 0;//direction difference(Differentiation) //
+			//double D_errSum=0;//sum of direction error(Integration)      //
+		// set Steer  
 		//get the error 
-		D_err = -atan2(_midline[25][0],_midline[25][1]);//only track the aiming point on the middle line
+		D_err = -10*atan2(_midline[25][0],_midline[25][1]);//only track the aiming point on the middle line
 
 		//the differential and integral operation 
 		D_errDiff = D_err - Tmp;
@@ -192,11 +209,12 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 		Tmp = D_err;
 
 		//set the error and get the cmdSteer
-		*cmdSteer =constrain(-1.0,1.0,kp_d * D_err + ki_d * D_errSum + kd_d * D_errDiff);
+		*cmdSteer =constrain(-1.0, 1.0, kp_d * D_err + ki_d * D_errSum + kd_d * D_errDiff);
+		//*cmdSteer =constrain(-1.0, 1.0, D_err);
 
 		//print some useful info on the terminal
-		printf("D_err : %f \n", D_err);
-		printf("cmdSteer %f \n", *cmdSteer);	
+		//printf("D_err : %f \n", D_err);
+		//printf("cmdSteer %f \n", *cmdSteer);	
 		/******************************************End by Yuan Wei********************************************/
 	}
 }
@@ -335,4 +353,3 @@ circle getR(float x1, float y1, float x2, float y2, float x3, float y3)
 	circle tmp = {r,sign};
 	return tmp;
 }
-
