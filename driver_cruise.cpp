@@ -144,11 +144,11 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 			_midline[startPoint+2*delta][0],_midline[startPoint+2*delta][1]);
 		if (c.r<=60)
 		{
-			expectedSpeed = constrain(45,300,c.r*c.r*(-0.046)+c.r*5.3-59.66);
+			expectedSpeed = constrain(45,200,c.r*c.r*(-0.046)+c.r*5.3-59.66);
 		}
 		else
 		{
-			expectedSpeed = constrain(100,300,c.r*1.4);
+			expectedSpeed = constrain(100,200,c.r*1.4);
 		}
 		// set Acc and Brake
 		curSpeedErr = expectedSpeed - _speed;
@@ -201,7 +201,8 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 			//double D_errSum=0;//sum of direction error(Integration)      //
 		// set Steer  
 		//get the error 
-		D_err = -10*atan2(_midline[25][0],_midline[25][1]);//only track the aiming point on the middle line
+		D_err = -5 * atan2(_midline[25][0], _midline[25][1])+ _yawrate/5; //only track the aiming point on the middle line
+		printf("D_err = %f\n", D_err);
 
 		//the differential and integral operation 
 		D_errDiff = D_err - Tmp;
