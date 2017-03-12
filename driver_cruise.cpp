@@ -10,11 +10,16 @@
 
 #include "driver_cruise.h"
 #include "stdio.h"
+#include <cmath>
+
+using namespace std;
 
 #define PI 3.141592653589793238462643383279
 
 static void userDriverGetParam(float midline[200][2], float yaw, float yawrate, float speed, float acc, float width, int gearbox, float rpm);
 static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, int* cmdGear);
+static double getE(double x, double y);
+static double distance(double x1, double y1, double x2, double y2);
 static int InitFuncPt(int index, void *pt);
 
 // Module Entry Point
@@ -120,7 +125,8 @@ static void userDriverGetParam(float midline[200][2], float yaw, float yawrate, 
 	_gearbox = gearbox;
 
 	//printf("yaw= %f \n", yaw);	
-	printf("yawRate= %f \n", yawrate);
+	//printf("yawRate= %f \n", yawrate);
+	//printf("y0= %f \n", midline[0][1]);
 
 }
 
@@ -134,75 +140,135 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 		// Speed Control
 		/*
 		You can modify the limited speed in this module
-		Enjoy  -_-  
+		Enjoy  -_-
 		*/
 
 		//  get expectedSpeed by the radius at the startPoint
-		startPoint = _speed * 0.445;  // 0.445
-		c = getR(_midline[startPoint][0],_midline[startPoint][1],
-			_midline[startPoint+delta][0],_midline[startPoint+delta][1],
-			_midline[startPoint+2*delta][0],_midline[startPoint+2*delta][1]);
-		if (c.r<=60)
+		startPoint = _speed * 0.39;  // 0.445
+		c = getR(_midline[startPoint][0], _midline[startPoint][1],
+			_midline[startPoint + delta][0], _midline[startPoint + delta][1],
+			_midline[startPoint + 2 * delta][0], _midline[startPoint + 2 * delta][1]);
+		double vel_max = 300;
+		if (c.r <= 60)
 		{
-			expectedSpeed = constrain(45,200,c.r*c.r*(-0.046)+c.r*5.3-59.66);
+			expectedSpeed = constrain(45, vel_max, c.r*c.r*(-0.046) + c.r*5.3 - 59.66);
 		}
 		else
 		{
-			expectedSpeed = constrain(100,200,c.r*1.4);
+			expectedSpeed = constrain(100, vel_max, c.r*1.4);
 		}
+		//printf("expectedSpeed = %f\n\n", expectedSpeed);
 		// set Acc and Brake
 		curSpeedErr = expectedSpeed - _speed;
-		speedErrSum = 0.1 * speedErrSum + curSpeedErr;
-		if (curSpeedErr > 0)
-		{
-			
-			if (abs(*cmdSteer)<0.6)
+		speedErrSum = 0.02 * speedErrSum + curSpeedErr;
+		offset = getE(_midline[0][0], _midline[0][1]);
+		if (_speed > 45) {
+			if (curSpeedErr > 0)
 			{
-				*cmdAcc = constrain(0.0,1.0,kp_s * curSpeedErr + ki_s * speedErrSum + offset);
-				// cmdAcc = constrain(0.0, 1.0, 0.02 * curSpeedErr)
-				*cmdBrake = 0;
+
+				if (abs(*cmdSteer) < 0.6)
+				{
+					*cmdAcc = constrain(0.0, 1.0, kp_s * curSpeedErr + ki_s * speedErrSum + offset);
+					// cmdAcc = constrain(0.0, 1.0, 0.02 * curSpeedErr)
+					*cmdBrake = 0;
+				}
+				else if (abs(*cmdSteer) > 0.70)
+				{
+					*cmdAcc = 0.02 + offset;
+					*cmdBrake = 0;
+				}
+				else
+				{
+					*cmdAcc = 0.11 + offset;
+					*cmdBrake = 0;
+				}
+
 			}
-			else if (abs(*cmdSteer)>0.70)
+			else if (curSpeedErr < 0)			// offset < 0 : the car is on the right side /  offset > 0 : on the left side  ( mid[0][0]<0 ->  e<0 )
 			{
-				*cmdAcc = 0.005 + offset;
-				*cmdBrake = 0;
+				printf("initial Brake = %f\n", constrain(0.0, 0.8, -kp_s *curSpeedErr / 5) );
+				//printf("offset = %f\n", offset);
+				double tmp = abs(offset);
+				if (tmp < 1) tmp = 0;
+				*cmdBrake = constrain(0.0, 1.0, -kp_s *curSpeedErr / 5 + tmp);
+				//printf("new Brake = %f\n\n", *cmdBrake);
+				*cmdAcc = 0;
 			}
-			else
-			{
-				*cmdAcc = 0.11 + offset;
-				*cmdBrake = 0;
-			}
-		
 		}
-		else if (curSpeedErr < 0)
-		{
-			*cmdBrake = constrain(0.0,0.8,-kp_s *curSpeedErr/5 - offset/3);
-			*cmdAcc = 0;
+		else {
+			if (curSpeedErr > 0)
+			{
+
+				if (abs(*cmdSteer) < 0.6)
+				{
+					*cmdAcc = constrain(0.0, 1.0, kp_s * curSpeedErr + ki_s * speedErrSum + offset);
+					// cmdAcc = constrain(0.0, 1.0, 0.02 * curSpeedErr)
+					*cmdBrake = 0;
+				}
+				else if (abs(*cmdSteer) > 0.70)
+				{
+					*cmdAcc = 1 + offset;
+					*cmdBrake = 0;
+				}
+				else
+				{
+					*cmdAcc = 1 + offset;
+					*cmdBrake = 0;
+				}
+
+			}
+			else if (curSpeedErr < 0)
+			{
+				*cmdBrake = constrain(0.0, 0.8, -kp_s *curSpeedErr / 5 - offset / 3);
+				*cmdAcc = 0;
+			}
 		}
+
 
 		// set Gear
 		updateGear(cmdGear);
-		
+
 		/******************************************Modified by Yuan Wei********************************************/
 		/*
 		Please select a error model and coding for it here, you can modify the steps to get a new 'D_err',this is just a sample.
 		Once you have chose the error model , you can rectify the value of PID to improve your control performance.
-		Enjoy  -_-  
+		Enjoy  -_-
 		*/
 		// Direction Control		
 		//set the param of PID controller
-        kp_d = 1;
-        ki_d = 0;
+		kp_d = 1;
+		ki_d = 0;
 		kd_d = 0;
 
-		// Direction Control Variables						         //
-			//double D_err;//direction error					             //
-			//double D_errDiff = 0;//direction difference(Differentiation) //
-			//double D_errSum=0;//sum of direction error(Integration)      //
-		// set Steer  
-		//get the error 
-		D_err = -5 * atan2(_midline[25][0], _midline[25][1])+ _yawrate/5; //only track the aiming point on the middle line
-		printf("D_err = %f\n", D_err);
+		/*Direction Control Variables						         //
+			double D_err;//direction error					             //
+			double D_errDiff = 0;//direction difference(Differentiation) //
+			double D_errSum=0;//sum of direction error(Integration)      //
+		 set Steer
+		get the error */
+		/* yaw>0 || steer < 0  : turn right   /   yaw < 0 || steer > 0 : turn left
+			offset < 0 : the car is on the right side /  offset > 0 : on the left side  ( mid[0][0]<0 ->  e<0 )
+			best : when steer < 0 ( turn right ) , the car should be on the right side -> e < 0
+		*/
+		//printf("e = %f \n", e);
+		double coe_targetPoint = 8;
+		double coe_offset = 0.1;
+		double offset_threshold = 1;
+		//printf("yaw_ = %f\n", _yaw);
+		//printf("initial e= %f\n", e);
+		offset = getE(_midline[0][0], _midline[0][1]);
+
+		if ( (_yaw > 0 && offset > 0) || offset > offset_threshold)            //   when car turn right ( _yaw > 0),  it should be on the right side, if it is on the left side, we can add the offset into D_err
+			offset = -offset;
+		else if ( (_yaw < 0 && offset < 0) || offset < -offset_threshold) ; //  turn left ... on the left side ... 
+		else offset = 0;                             //   else ... maybe just targetPoint is enough
+
+		printf("initial steer = %f\n", atan2(_midline[25][0], _midline[25][1]));
+		double D_err = - coe_targetPoint * atan2(_midline[25][0], _midline[25][1]) + coe_offset * offset ; //only track the aiming point on the middle line
+		//printf("new steer = %f\n", D_err);
+		//printf("e= %f\n\n", e);
+		
+
 
 		//the differential and integral operation 
 		D_errDiff = D_err - Tmp;
@@ -215,7 +281,7 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 
 		//print some useful info on the terminal
 		//printf("D_err : %f \n", D_err);
-		//printf("cmdSteer %f \n", *cmdSteer);	
+		printf("cmdSteer = %f \n", *cmdSteer);	
 		/******************************************End by Yuan Wei********************************************/
 	}
 }
@@ -353,4 +419,14 @@ circle getR(float x1, float y1, float x2, float y2, float x3, float y3)
 	int sign = (x>0)?1:-1;
 	circle tmp = {r,sign};
 	return tmp;
+}
+
+static double getE(double x, double y) {
+	double e = distance(x, y, 0, 0);
+	e = x < 0 ?  -e :  e;
+	return e;
+}
+
+static double distance(double x1, double y1, double x2, double y2) {
+	return sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
 }
